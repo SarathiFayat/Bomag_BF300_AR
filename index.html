@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Studio 3D - Multi Stream (Fixed)</title>
+    
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+
+    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js"></script>
+    
+    <style>
+        :root {
+            --glass-bg: rgba(18,18,18,0.6);
+            --glass-border: rgba(255,255,255,0.08);
+            --accent: #ffffff;
+            --accent-dim: rgba(255,255,255,0.5);
+        }
+        * { box-sizing:border-box; margin:0; padding:0; }
+        body,html { width:100%; height:100%;
+            font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+            background:#0a0a0a; color:var(--accent); overflow:hidden;
+            -webkit-font-smoothing:antialiased; }
+
+        #viewer-container { width:100%; height:100%; position:relative; contain: layout style paint;
+            display:flex; justify-content:center; align-items:center; }
+
+        model-viewer { width:100%; height:100%; opacity:0; transition:opacity 0.6s ease; }
+
+        .top-nav { position:absolute; top:20px; left:20px; right:20px;
+            display:flex; justify-content:space-between; align-items:center;
+            z-index:10; pointer-events:none; }
+        .nav-pill { background:var(--glass-bg);
+            backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+            border:1px solid var(--glass-border);
+            padding:8px 16px; border-radius:20px;
+            pointer-events:auto; display:flex; gap:12px; align-items:center;
+            font-size:12px; letter-spacing:-0.2px; }
+        .status-dot { width:6px; height:6px; background:#ff9500; border-radius:50%; transition:background 0.3s; }
+        .status-dot.ready { background:#30d158; }
+        .status-dot.error { background:#ff3b30; }
+
+        .bottom-toolbar { position:absolute; bottom:24px;
+            left:50%; transform:translateX(-50%);
+            background:var(--glass-bg);
+            backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+            border:1px solid var(--glass-border);
+            padding:6px; border-radius:30px;
+            display:flex; gap:4px; align-items:center;
+            z-index:10; max-width:95%; box-shadow:0 10px 30px rgba(0,0,0,0.5); }
+        .control-tab { display:flex; align-items:center;
+            padding:8px 14px; border-radius:20px;
+            font-size:12px; font-weight:500; color:var(--accent-dim);
+            cursor:pointer; user-select:none; transition:all 0.2s ease;
+            gap:6px; white-space:nowrap; }
+        .control-tab:hover { color:var(--accent); }
+        .control-tab.active { background:rgba(255,255,255,0.1); color:var(--accent); }
+        select.control-select { background:transparent; border:none; color:var(--accent);
+            font-size:12px; font-weight:500; outline:none; cursor:pointer; }
+        select.control-select option { background:#1a1a1a; color:#fff; }
+        .divider { width:1px; height:16px; background:rgba(255,255,255,0.15); margin:0 4px; }
+
+        #ar-trigger { background:var(--accent); color:#000;
+            font-weight:600; padding:10px 20px; border-radius:24px;
+            border:none; cursor:pointer; box-shadow:0 4px 15px rgba(0,0,0,0.3); }
+        #ar-trigger:hover { background:rgba(255,255,255,0.9); }
+        model-viewer > #ar-trigger { position:absolute; bottom:85px; left:50%;
+            transform:translateX(-50%); z-index:100; }
+
+        #loader-overlay { position:absolute; inset:0;
+            display:flex; flex-direction:column;
+            justify-content:center; align-items:center; gap:20px;
+            z-index:20; pointer-events:none; transition:opacity 0.5s ease; background:#0a0a0a;}
+        #loading-text { font-size:13px; font-weight:400; color:var(--accent-dim); letter-spacing:0.2px; text-align:center; padding:0 20px;}
+
+        .bar-group { display:flex; flex-direction:column; gap:10px; width:260px; max-height: 50vh; overflow-y: auto; padding: 4px; }
+        .bar-group::-webkit-scrollbar { width: 4px; }
+        .bar-group::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+        .bar-row { display:flex; flex-direction:column; gap:4px; }
+        .bar-label { font-size:10px; color:rgba(255,255,255,0.35); letter-spacing:0.4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .bar-track { width:100%; height:2px; background:rgba(255,255,255,0.1); border-radius:2px; overflow:hidden; }
+        .bar-fill { height:100%; width:0%; background:var(--accent); border-radius:2px; transition:width 0.2s ease; }
+
+        #speed-label { font-size:11px; color:rgba(255,255,255,0.3); letter-spacing:0.3px; margin-top: 4px; }
+
+        /* Hotspot buttons on animated parts */
+        .anim-hotspot {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 6px 12px 6px 8px;
+            color: var(--accent);
+            font-size: 11px;
+            font-weight: 500;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+            cursor: pointer;
+            white-space: nowrap;
+            pointer-events: auto;
+            transition: background 0.2s, border-color 0.2s, transform 0.15s;
+            transform: translateX(-50%);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+            user-select: none;
+        }
+        .anim-hotspot:hover { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.25); }
+        .anim-hotspot.playing { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.4); }
+        .anim-hotspot .hs-dot {
+            width: 22px; height: 22px;
+            background: rgba(255,255,255,0.12);
+            border: 1.5px solid rgba(255,255,255,0.35);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 10px; flex-shrink: 0;
+            transition: background 0.2s;
+        }
+        .anim-hotspot.playing .hs-dot { background: rgba(255,255,255,0.25); border-color: #fff; }
+        /* Pulse ring on idle hotspots */
+        .anim-hotspot:not(.playing) .hs-dot::after {
+            content: '';
+            position: absolute;
+            width: 22px; height: 22px;
+            border-radius: 50%;
+            border: 1.5px solid rgba(255,255,255,0.4);
+            animation: hs-pulse 2s ease-out infinite;
+        }
+        @keyframes hs-pulse {
+            0%   { transform: scale(1);   opacity: 0.7; }
+            100% { transform: scale(2.2); opacity: 0; }
+        }
+        .anim-hotspot .hs-dot { position: relative; }
+    </style>
+</head>
+<body>
+<div id="viewer-container">
+
+    <div id="loader-overlay">
+        <div id="loading-text">Connecting to Live Asset Streams…</div>
+        <div class="bar-group" id="dynamic-bar-container"></div>
+        <div id="speed-label"></div>
+    </div>
+
+    <model-viewer id="viewer"
+        camera-controls touch-action="pan-y"
+        shadow-intensity="0.2" shadow-softness="0.6" exposure="1.0" environment-image="neutral"
+        interpolation-decay="50" interaction-prompt="none"
+        min-camera-orbit="auto 2deg auto"
+        max-camera-orbit="auto 90deg auto"
+        ar ar-modes="webxr quick-look"
+        ar-scale="auto" ar-placement="floor">
+        <button slot="ar-button" id="ar-trigger">▲ View in Space</button>
+    </model-viewer>
+
+    <div class="top-nav">
+        <div class="nav-pill">
+            <div id="status-light" class="status-dot"></div>
+            <span id="status-label">Connecting…</span>
+        </div>
+    </div>
+
+    <div class="bottom-toolbar">
+        <div id="tab-turntable" class="control-tab"><span>⟳</span> Turntable</div>
+        <div id="tab-shadow"    class="control-tab active"><span>☖</span> Shadows</div>
+        <div id="dock-animations" style="display:none; align-items:center; gap:4px;">
+            <div class="divider"></div>
+            <div id="tab-play" class="control-tab active"><span>▻</span> Play</div>
+            <div class="control-tab">
+                <select id="clip-picker" class="control-select"></select>
+            </div>
+        </div>
+        <div class="divider"></div>
+        <div id="tab-ar-placement" class="control-tab"><span>⚲</span> Floor</div>
+        <div id="tab-ar-scale"    class="control-tab"><span>⤢</span> Scalable</div>
+    </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+
+// Asset manifest
+const BASE = 'https://raw.githubusercontent.com/GokulakannanSeenivasan111/Test-Web-AR-GLB-Viewer/main/';
+const GLB_URLS = [
+    { url: BASE + 'Screed.glb',                           name: 'Screed' },
+    { url: BASE + 'ScreedRH.glb',                         name: 'ScreedRH' },
+    { url: BASE + 'ScreedLH.glb',                         name: 'ScreedLH' },
+    { url: BASE + 'Auger.glb',                            name: 'Auger' },
+    { url: BASE + encodeURIComponent('Seat&Cabin.glb'),   name: 'Seat & Cabin' },
+    { url: BASE + encodeURIComponent('Tracktor C.glb'),   name: 'Tracktor' },
+    { url: BASE + 'TowArm.glb',                           name: 'TowArm' },
+    { url: BASE + 'HopperSimulated.glb',                  name: 'HopperSimulated' },
+];
+
+const viewer         = document.getElementById('viewer');
+const loaderOverlay  = document.getElementById('loader-overlay');
+const speedLabel     = document.getElementById('speed-label');
+const statusLight    = document.getElementById('status-light');
+const statusLabel    = document.getElementById('status-label');
+const tabTurntable   = document.getElementById('tab-turntable');
+const tabShadow      = document.getElementById('tab-shadow');
+const dockAnims      = document.getElementById('dock-animations');
+const tabPlay        = document.getElementById('tab-play');
+const clipPicker     = document.getElementById('clip-picker');
+const tabArPlacement = document.getElementById('tab-ar-placement');
+const tabArScale     = document.getElementById('tab-ar-scale');
+const barContainer   = document.getElementById('dynamic-bar-container');
+
+// State
+const barFills  = [];
+const barLabels = [];
+let activeBlobURL        = null; 
+const pausedAt = {}; 
+const hotspotMap = {};
+
+const fmtBytes = b => b < 1048576 ? (b/1024).toFixed(1)+'KB' : (b/1048576).toFixed(2)+'MB';
+const fmtSpeed = b => b < 1048576 ? (b/1024).toFixed(1)+'KB/s' : (b/1048576).toFixed(2)+'MB/s';
+
+function hideLoader() {
+    loaderOverlay.style.opacity = '0';
+    setTimeout(() => { loaderOverlay.style.display = 'none'; }, 500);
+}
+
+// ── FIXED: Animation Switcher ──────────────────────────────────────
+async function playAnimation(clipName) {
+    // 1. Save current position of outgoing animation
+    if (viewer.animationName) {
+        pausedAt[viewer.animationName] = viewer.currentTime;
+    }
+
+    // 2. Pause the engine first
+    viewer.pause();
+
+    // 3. Switch animation
+    viewer.animationName = clipName;
+
+    // 4. CRITICAL: Wait for browser layout/render cycle
+    // We wait for 2 frames to ensure the engine has fully processed the animation swap
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    // 5. Force the currentTime restoration
+    viewer.currentTime = pausedAt[clipName] || 0;
+    
+    // 6. Resume playback
+    viewer.play();
+
+    // 7. Update UI
+    tabPlay.classList.add('active');
+    tabPlay.innerHTML = '<span>&#x25bb;</span> Play';
+    clearAllHotspots();
+    
+    Object.values(hotspotMap).forEach(({ clipName: name, el }) => {
+        if (name === clipName) {
+            el.classList.add('playing');
+            el.querySelector('.hs-dot').innerHTML = '&#x23f8;';
+        }
+    });
+}
+
+function buildProgressBars() {
+    barContainer.innerHTML = '';
+    barFills.length = 0;
+    barLabels.length = 0;
+    const frag = document.createDocumentFragment();
+    GLB_URLS.forEach((asset, idx) => {
+        const row   = document.createElement('div'); row.className = 'bar-row';
+        const label = document.createElement('div'); label.className = 'bar-label';
+        label.textContent = asset.name;
+        const track = document.createElement('div'); track.className = 'bar-track';
+        const fill  = document.createElement('div'); fill.className = 'bar-fill';
+        if (idx > 0) fill.style.background = 'rgba(255,255,255,0.5)';
+        track.appendChild(fill); row.appendChild(label); row.appendChild(track);
+        frag.appendChild(row);
+        barFills.push(fill); barLabels.push(label);
+    });
+    barContainer.appendChild(frag);
+}
+
+async function fetchGLB(asset, idx) {
+    const res = await fetch(asset.url);
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' fetching ' + asset.name);
+    const contentLength = parseInt(res.headers.get('content-length') || '0', 10);
+    const hasLen = contentLength > 0;
+    const reader = res.body.getReader();
+    let preBuf = hasLen ? new Uint8Array(contentLength) : null;
+    const chunks = hasLen ? null : [];
+    let received = 0, lastTime = performance.now(), lastBytes = 0;
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (hasLen) preBuf.set(value, received); else chunks.push(value);
+        received += value.byteLength;
+        const now = performance.now(), elapsed = (now - lastTime) / 1000;
+        if (elapsed >= 0.3) {
+            const bps = (received - lastBytes) / elapsed;
+            lastTime = now; lastBytes = received;
+            const pct = hasLen ? (received / contentLength * 100) : Math.min(90, received / 1048576 * 8);
+            if (barFills[idx])  barFills[idx].style.width = Math.min(100, pct) + '%';
+            if (barLabels[idx]) barLabels[idx].textContent =
+                asset.name + ' ' + fmtBytes(received) + (hasLen ? ' / ' + fmtBytes(contentLength) : '');
+            speedLabel.textContent = fmtSpeed(bps);
+        }
+    }
+    if (barFills[idx])  barFills[idx].style.width = '100%';
+    if (barLabels[idx]) barLabels[idx].textContent = asset.name + ' ✓';
+    if (hasLen) return preBuf.buffer;
+    const total = new Uint8Array(received); let off = 0;
+    for (const c of chunks) { total.set(c, off); off += c.byteLength; }
+    return total.buffer;
+}
+
+const TEX_SLOTS = ['map','normalMap','roughnessMap','metalnessMap','emissiveMap',
+                   'aoMap','lightMap','bumpMap','displacementMap','alphaMap','envMap'];
+function disposeMaterial(mat) {
+    TEX_SLOTS.forEach(s => { if (mat[s]) mat[s].dispose(); });
+    mat.dispose();
+}
+function disposeObject(root) {
+    root.traverse(node => {
+        if (!node.isMesh) return;
+        if (node.geometry) node.geometry.dispose();
+        const m = node.material;
+        if (m) Array.isArray(m) ? m.forEach(disposeMaterial) : disposeMaterial(m);
+    });
+    if (root.clear) root.clear();
+    THREE.Cache.clear();
+}
+
+async function initRemoteStream() {
+    buildProgressBars();
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/');
+    const loader = new GLTFLoader();
+    loader.setDRACOLoader(dracoLoader);
+
+    try {
+        const buffers = await Promise.all(GLB_URLS.map((asset, idx) => fetchGLB(asset, idx)));
+        const masterRoot = new THREE.Object3D();
+        const allAnimations = [];
+        
+        for (let i = 0; i < buffers.length; i++) {
+            const gltf = await new Promise((res, rej) => loader.parse(buffers[i], '', res, rej));
+            buffers[i] = null;
+            if (gltf.scene) {
+                gltf.scene.traverse(node => {
+                    if (!node.isMesh) return;
+                    node.castShadow = node.receiveShadow = true;
+                    node.matrixAutoUpdate = false;
+                });
+                masterRoot.add(gltf.scene);
+            }
+            if (gltf.animations && gltf.animations.length) {
+                const base = GLB_URLS[i].name;
+                const box = new THREE.Box3().setFromObject(gltf.scene);
+                if (!box.isEmpty()) animCentroids[base] = box.getCenter(new THREE.Vector3());
+                gltf.animations.forEach(clip => {
+                    clip.name = clip.name ? clip.name + ' (' + base + ')' : 'Anim (' + base + ')';
+                    allAnimations.push(clip);
+                });
+            }
+        }
+        dracoLoader.dispose();
+
+        const { GLTFExporter } = await import('three/addons/exporters/GLTFExporter.js');
+        const exporter = new GLTFExporter();
+        exporter.parse(masterRoot, (glbBuffer) => {
+            disposeObject(masterRoot);
+            if (activeBlobURL) URL.revokeObjectURL(activeBlobURL);
+            activeBlobURL = URL.createObjectURL(new Blob([glbBuffer], { type: 'model/gltf-binary' }));
+            viewer.src = activeBlobURL;
+            viewer.addEventListener('load', () => { if (activeBlobURL) { URL.revokeObjectURL(activeBlobURL); activeBlobURL = null; } }, { once: true });
+            hideLoader();
+            viewer.style.opacity = '1';
+            statusLight.className = 'status-dot ready';
+            statusLabel.textContent = 'Engine Online';
+        }, (err) => console.error(err), { binary: true, animations: allAnimations });
+    } catch (err) { console.error(err); }
+}
+
+const animCentroids = {};
+function buildHotspots(clips) {
+    viewer.querySelectorAll('.anim-hotspot').forEach(el => el.remove());
+    Object.keys(hotspotMap).forEach(k => delete hotspotMap[k]);
+    const partClips = {}; 
+    clips.forEach(clipName => {
+        const m = clipName.match(/\(([^)]+)\)$/);
+        const part = m ? m[1] : clipName;
+        if (!partClips[part]) partClips[part] = clipName;
+    });
+    let slotIdx = 0;
+    Object.entries(partClips).forEach(([part, clipName]) => {
+        const btn = document.createElement('button');
+        btn.className = 'anim-hotspot';
+        btn.slot = 'hotspot-anim-' + slotIdx++;
+        btn.dataset.clipName = clipName;
+        btn.innerHTML = '<span class="hs-dot">&#x25bb;</span><span>' + part + '</span>';
+        const centroid = animCentroids[part];
+        if (centroid) {
+            btn.dataset.position = centroid.x + ' ' + centroid.y + ' ' + centroid.z;
+            btn.dataset.normal   = '0 1 0';
+        }
+        btn.addEventListener('click', () => onHotspotClick(btn));
+        viewer.appendChild(btn);
+        hotspotMap[part] = { clipName, el: btn };
+    });
+}
+
+function clearAllHotspots() {
+    Object.values(hotspotMap).forEach(({ el }) => {
+        el.classList.remove('playing');
+        el.querySelector('.hs-dot').innerHTML = '&#x25bb;';
+    });
+}
+
+function onHotspotClick(btn) {
+    const clipName = btn.dataset.clipName;
+    const isSameClip = (viewer.animationName === clipName);
+    
+    if (isSameClip && !viewer.paused) {
+        pausedAt[viewer.animationName] = viewer.currentTime;
+        viewer.pause();
+        clearAllHotspots();
+        tabPlay.classList.remove('active');
+        tabPlay.innerHTML = '<span>&#x23f8;</span> Paused';
+    } else {
+        playAnimation(clipName);
+    }
+}
+
+viewer.addEventListener('load', () => {
+    const clips = viewer.availableAnimations || [];
+    clipPicker.innerHTML = '';
+    if (clips.length) {
+        clips.forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name; opt.textContent = name;
+            clipPicker.appendChild(opt);
+        });
+        dockAnims.style.display = 'flex';
+        viewer.animationName = clips[0];
+        viewer.pause();
+        buildHotspots(clips);
+    }
+});
+
+tabPlay.addEventListener('click', () => {
+    if (!viewer.paused) {
+        pausedAt[viewer.animationName] = viewer.currentTime;
+        viewer.pause();
+        tabPlay.classList.remove('active');
+        tabPlay.innerHTML = '<span>&#x23f8;</span> Paused';
+        clearAllHotspots();
+    } else {
+        viewer.play();
+        tabPlay.classList.add('active');
+        tabPlay.innerHTML = '<span>&#x25bb;</span> Play';
+        Object.values(hotspotMap).forEach(({ clipName, el }) => {
+            if (clipName === viewer.animationName) {
+                el.classList.add('playing');
+                el.querySelector('.hs-dot').innerHTML = '&#x23f8;';
+            }
+        });
+    }
+});
+
+clipPicker.addEventListener('change', e => playAnimation(e.target.value));
+
+tabTurntable.addEventListener('click', () => {
+    if (tabTurntable.classList.toggle('active')) {
+        viewer.setAttribute('auto-rotate', '');
+        viewer.setAttribute('rotation-per-second', '24deg');
+    } else { viewer.removeAttribute('auto-rotate'); }
+});
+tabShadow.addEventListener('click', () => {
+    if (tabShadow.classList.toggle('active')) {
+        viewer.setAttribute('shadow-intensity', "0.2");
+    } else {
+        viewer.setAttribute('shadow-intensity', "0");
+    }
+});
+tabArPlacement.addEventListener('click', () => {
+    if (viewer.getAttribute('ar-placement') === 'floor') {
+        viewer.setAttribute('ar-placement', 'wall');
+        tabArPlacement.innerHTML = '<span>&#x2195;</span> Wall Mount';
+        tabArPlacement.classList.add('active');
+    } else {
+        viewer.setAttribute('ar-placement', 'floor');
+        tabArPlacement.innerHTML = '<span>&#x2af2;</span> Floor';
+        tabArPlacement.classList.remove('active');
+    }
+});
+tabArScale.addEventListener('click', () => {
+    if (viewer.getAttribute('ar-scale') === 'auto') {
+        viewer.setAttribute('ar-scale', 'fixed');
+        tabArScale.innerHTML = '<span>&#x1f512;</span> Fixed 1:1';
+        tabArScale.classList.add('active');
+    } else {
+        viewer.setAttribute('ar-scale', 'auto');
+        tabArScale.innerHTML = '<span>&#x2922;</span> Scalable';
+        tabArScale.classList.remove('active');
+    }
+});
+
+initRemoteStream();
+</script>
+</body>
+</html>
